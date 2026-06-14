@@ -1,19 +1,64 @@
 // OpenRouteService Pelias geocoding (spec §2, §10): address → lat/lng on save.
-// Server-only. Degrades gracefully: returns null when there's no API key, no
-// address, or the lookup fails — the caller stores null coords and flags it.
+// Server-only. Degrades gracefully: a customer always saves. But we only keep
+// coordinates we actually trust — a weak/fallback match (e.g. a typo'd address
+// that Pelias snaps to a city centroid out in Lake Erie) is treated as "no
+// usable location" so it gets flagged instead of saving junk coords.
 
-export interface GeoPoint {
-  lat: number;
-  lng: number;
+// Tune here. Pelias confidence is 0..1; a confident street+house match is
+// typically >= 0.9, interpolated ~0.8, coarse fallbacks well below.
+export const GEOCODE_CONFIDENCE_THRESHOLD = 0.8;
+
+// Layers that represent an actual street address / building, as opposed to a
+// coarse fallback (street centroid, city/locality/region centroid, etc.).
+const ADDRESS_LAYERS = new Set(["address", "venue"]);
+
+export type GeocodeQuality = "ok" | "low_confidence" | "no_result";
+
+export interface GeocodeResult {
+  lat: number | null;
+  lng: number | null;
+  quality: GeocodeQuality;
+  confidence: number | null;
+  layer: string | null;
+  matchType: string | null;
 }
+
+// Pure decision: is this Pelias feature a trustworthy house-number match?
+// Exported so it can be unit-tested without a network call.
+export function isConfidentAddressMatch(props: {
+  confidence?: unknown;
+  layer?: unknown;
+  match_type?: unknown;
+}): boolean {
+  const confidence = typeof props.confidence === "number" ? props.confidence : 0;
+  const layer = typeof props.layer === "string" ? props.layer : null;
+  const matchType =
+    typeof props.match_type === "string" ? props.match_type : null;
+
+  return (
+    confidence >= GEOCODE_CONFIDENCE_THRESHOLD &&
+    layer !== null &&
+    ADDRESS_LAYERS.has(layer) &&
+    matchType !== "fallback"
+  );
+}
+
+const NO_RESULT: GeocodeResult = {
+  lat: null,
+  lng: null,
+  quality: "no_result",
+  confidence: null,
+  layer: null,
+  matchType: null,
+};
 
 export async function geocodeAddress(
   address?: string | null,
   city?: string | null,
   state?: string | null,
-): Promise<GeoPoint | null> {
+): Promise<GeocodeResult> {
   const key = process.env.ORS_API_KEY;
-  if (!key || !address?.trim()) return null;
+  if (!key || !address?.trim()) return NO_RESULT;
 
   const text = [address, city, state || "OH"].filter(Boolean).join(", ");
   const url =
@@ -28,19 +73,39 @@ export async function geocodeAddress(
       // Geocoding is best-effort; don't let a slow lookup hang the save.
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return NO_RESULT;
 
     const data = await res.json();
+    const feature = data?.features?.[0];
+    if (!feature) return NO_RESULT;
+
+    const props = feature.properties ?? {};
+    const confidence =
+      typeof props.confidence === "number" ? props.confidence : null;
+    const layer = typeof props.layer === "string" ? props.layer : null;
+    const matchType =
+      typeof props.match_type === "string" ? props.match_type : null;
+
     // ORS returns [lng, lat] (spec §10 gotcha: easy to reverse).
-    const coords = data?.features?.[0]?.geometry?.coordinates;
-    if (Array.isArray(coords) && coords.length === 2) {
-      const [lng, lat] = coords;
-      if (typeof lat === "number" && typeof lng === "number") {
-        return { lat, lng };
-      }
+    const coords = feature.geometry?.coordinates;
+    const lng = Array.isArray(coords) ? coords[0] : undefined;
+    const lat = Array.isArray(coords) ? coords[1] : undefined;
+    if (typeof lat !== "number" || typeof lng !== "number") return NO_RESULT;
+
+    if (isConfidentAddressMatch(props)) {
+      return { lat, lng, quality: "ok", confidence, layer, matchType };
     }
-    return null;
+
+    // Matched, but weak/coarse — don't keep the coordinates; flag for review.
+    return {
+      lat: null,
+      lng: null,
+      quality: "low_confidence",
+      confidence,
+      layer,
+      matchType,
+    };
   } catch {
-    return null;
+    return NO_RESULT;
   }
 }

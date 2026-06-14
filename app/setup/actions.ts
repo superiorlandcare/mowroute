@@ -44,8 +44,10 @@ export async function saveCustomer(input: CustomerInput): Promise<ActionResult> 
   const name = input.name?.trim();
   if (!name) return { error: "Customer name is required." };
 
-  // Geocode on save (spec §10). Best-effort: null coords get flagged in the UI.
-  const point = await geocodeAddress(input.address, input.city, "OH");
+  // Geocode on save (spec §10). Best-effort: we only keep coordinates we trust
+  // (confident street-address match). Weak/fallback matches and empty results
+  // store null coords, which surfaces the "Not geocoded" flag in the UI.
+  const geo = await geocodeAddress(input.address, input.city, "OH");
 
   const row = {
     name,
@@ -56,8 +58,8 @@ export async function saveCustomer(input: CustomerInput): Promise<ActionResult> 
     notes: input.notes,
     meet_first: input.meet_first,
     hold_until: input.hold_until,
-    lat: point?.lat ?? null,
-    lng: point?.lng ?? null,
+    lat: geo.lat,
+    lng: geo.lng,
   };
 
   const res = input.id

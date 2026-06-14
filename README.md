@@ -13,8 +13,12 @@ the phases listed in §15 of the spec.
 admin/crew role gating, the `/login` screen, and route protection.
 
 **Phase 2 — Setup** (done): the admin `/setup` screen — customers + services
-CRUD with geocode-on-save (flags failures), per-customer service reordering,
-and crew account management (create via service-role, deactivate/reactivate).
+CRUD with geocode-on-save, per-customer service reordering, and crew account
+management (create via service-role, deactivate/reactivate). Geocoding only
+keeps coordinates from a confident street-address match (Pelias `confidence`
+≥ `GEOCODE_CONFIDENCE_THRESHOLD`, an `address`/`venue` layer, and not a
+`fallback`); weak/coarse or empty matches save null coords and show the "Not
+geocoded" flag, so typo'd addresses don't silently store junk coordinates.
 Requires `SUPABASE_SERVICE_ROLE_KEY` (crew creation) and, for geocoding,
 `ORS_API_KEY` — saving still works without the ORS key, customers just show a
 "Not geocoded" flag.

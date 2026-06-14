@@ -17,8 +17,9 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
-      // Reference material, not app source.
+      // Reference material and dev-only scripts, not app source.
       "docs/**",
+      "scripts/**",
     ],
   },
 ];
