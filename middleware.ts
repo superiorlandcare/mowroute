@@ -6,6 +6,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Node.js runtime: the Supabase client pulls in Node APIs that the Edge
+  // runtime rejects. Enabled via experimental.nodeMiddleware in next.config.ts.
+  runtime: "nodejs",
   matcher: [
     /*
      * Match every path except:
