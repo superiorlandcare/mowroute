@@ -10,8 +10,16 @@ the phases listed in §15 of the spec.
 ## Status
 
 **Phase 1 — Foundation** (done): database schema + RLS, Supabase auth with
-admin/crew role gating, the `/login` screen, and route protection. The Mow
-board, Setup, and Billing screens come in later phases.
+admin/crew role gating, the `/login` screen, and route protection.
+
+**Phase 2 — Setup** (done): the admin `/setup` screen — customers + services
+CRUD with geocode-on-save (flags failures), per-customer service reordering,
+and crew account management (create via service-role, deactivate/reactivate).
+Requires `SUPABASE_SERVICE_ROLE_KEY` (crew creation) and, for geocoding,
+`ORS_API_KEY` — saving still works without the ORS key, customers just show a
+"Not geocoded" flag.
+
+The Mow board, realtime, billing, and route optimization come in later phases.
 
 ## Getting started
 
@@ -66,8 +74,11 @@ links are hidden, and visiting `/setup` or `/billing` redirects you back home.
 | Path | Purpose |
 |---|---|
 | `supabase/migrations/0001_init.sql` | Schema (§4) + RLS (§5) + realtime (§6) — paste into Supabase. |
-| `lib/supabase/{client,server}.ts` | Browser / server Supabase clients. |
+| `lib/supabase/{client,server,admin}.ts` | Browser / server (RLS) / service-role Supabase clients. |
 | `lib/auth.ts` | `getSessionProfile`, `requireUser`, `requireAdmin` — route protection lives here, enforced in each Server Component (no middleware). |
+| `lib/geocode.ts` | OpenRouteService address → lat/lng (best-effort, on save). |
+| `lib/data/setup.ts` | Server-side fetch of customers + services + profiles. |
 | `app/login/` | Email + password sign-in. |
 | `app/page.tsx` | Authenticated home (Mow board placeholder until Phase 3). |
-| `app/{setup,billing}/` | Admin-only route stubs (full screens in Phases 2 & 6). |
+| `app/setup/` | Admin Setup: customers + services CRUD, reorder, geocode, crew (`actions.ts` = server actions). |
+| `app/billing/` | Admin-only route stub (full screen in Phase 6). |

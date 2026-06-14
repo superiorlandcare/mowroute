@@ -1,32 +1,35 @@
 import Link from "next/link";
-import { ChevronLeft, Settings } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
+import { getSetupData } from "@/lib/data/setup";
+import { SetupClient } from "./setup-client";
 
 export const metadata = { title: "Setup · MowRoute" };
 
 // Admin-only. Crew hitting this route are redirected to `/` by requireAdmin().
-// The screen itself (customers + services CRUD) is built in Phase 2.
 export default async function SetupPage() {
   await requireAdmin();
+  const { customers, profiles } = await getSetupData();
 
   return (
     <div className="min-h-screen bg-stone-100 text-stone-900">
-      <div className="max-w-md mx-auto px-5 py-6">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1 text-sm font-bold text-stone-500"
-        >
-          <ChevronLeft className="w-4 h-4" /> Back
-        </Link>
-        <div className="bg-white rounded-2xl border border-stone-200 p-6 mt-4 text-center">
-          <Settings className="w-8 h-8 text-stone-400 mx-auto" />
-          <div className="font-extrabold uppercase tracking-tight mt-3">
+      <div className="max-w-md mx-auto pb-24">
+        <div className="bg-stone-900 text-white px-5 pt-6 pb-5 rounded-b-3xl shadow-lg">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-sm font-bold text-stone-400"
+          >
+            <ChevronLeft className="w-4 h-4" /> Board
+          </Link>
+          <div className="mt-2 font-extrabold uppercase tracking-tight text-xl">
             Setup
           </div>
-          <p className="text-sm text-stone-500 mt-2">
-            Customers, services, and crew management arrive in Phase 2.
+          <p className="text-stone-400 text-sm mt-1">
+            Customers, services, and crew.
           </p>
         </div>
+
+        <SetupClient customers={customers} profiles={profiles} />
       </div>
     </div>
   );
