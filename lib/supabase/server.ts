@@ -21,7 +21,8 @@ export async function createClient() {
             );
           } catch {
             // Called from a Server Component, where cookies are read-only.
-            // The middleware (middleware.ts) refreshes the session cookies instead.
+            // Cookie writes (sign-in / sign-out / token refresh) happen in
+            // Server Actions and Route Handlers, where setting cookies is allowed.
           }
         },
       },
