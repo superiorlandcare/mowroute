@@ -1,12 +1,14 @@
 import { type NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/proxy";
+import { updateSession } from "@/lib/supabase/middleware";
 
-// Next.js 16: the `middleware` convention is renamed to `proxy` (Node.js runtime).
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   return updateSession(request);
 }
 
 export const config = {
+  // Node.js runtime: the Supabase client pulls in Node APIs that the Edge
+  // runtime rejects. Enabled via experimental.nodeMiddleware in next.config.ts.
+  runtime: "nodejs",
   matcher: [
     /*
      * Match every path except:

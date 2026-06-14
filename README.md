@@ -66,9 +66,9 @@ links are hidden, and visiting `/setup` or `/billing` redirects you back home.
 | Path | Purpose |
 |---|---|
 | `supabase/migrations/0001_init.sql` | Schema (§4) + RLS (§5) + realtime (§6) — paste into Supabase. |
-| `lib/supabase/{client,server,proxy}.ts` | Browser / server / proxy Supabase clients. |
+| `lib/supabase/{client,server,middleware}.ts` | Browser / server / middleware Supabase clients. |
 | `lib/auth.ts` | `getSessionProfile`, `requireUser`, `requireAdmin`. |
-| `proxy.ts` | Session refresh + auth redirects (Next 16 renamed `middleware` → `proxy`). |
+| `middleware.ts` | Session refresh + auth redirects (runs on every request). |
 | `app/login/` | Email + password sign-in. |
 | `app/page.tsx` | Authenticated home (Mow board placeholder until Phase 3). |
 | `app/{setup,billing}/` | Admin-only route stubs (full screens in Phases 2 & 6). |
