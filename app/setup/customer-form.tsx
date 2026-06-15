@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ChevronLeft, Phone, Pause } from "lucide-react";
+import { ChevronLeft, Phone, Pause, MapPin } from "lucide-react";
 import type { Customer } from "@/lib/types";
 import { saveCustomer, type CustomerInput } from "./actions";
 
@@ -40,6 +40,15 @@ export function CustomerForm({
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [meetFirst, setMeetFirst] = useState(initial?.meet_first ?? false);
   const [hold, setHold] = useState(initial?.hold_until ?? "");
+  const [coordsManual, setCoordsManual] = useState(
+    initial?.coords_manual ?? false,
+  );
+  const [lat, setLat] = useState(
+    initial?.lat != null ? String(initial.lat) : "",
+  );
+  const [lng, setLng] = useState(
+    initial?.lng != null ? String(initial.lng) : "",
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -55,6 +64,9 @@ export function CustomerForm({
       notes: notes.trim() || null,
       meet_first: meetFirst,
       hold_until: hold || null,
+      coords_manual: coordsManual,
+      lat: coordsManual && lat.trim() !== "" ? Number(lat) : null,
+      lng: coordsManual && lng.trim() !== "" ? Number(lng) : null,
     };
     startTransition(async () => {
       const res = await saveCustomer(payload);
@@ -166,6 +178,46 @@ export function CustomerForm({
           <Phone className="w-4 h-4" /> Text Katy before first cut
         </button>
 
+        {/* Manual coordinate override — for addresses the geocoder can't pin. */}
+        <button
+          onClick={() => setCoordsManual((v) => !v)}
+          className={`w-full mb-3 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 ${
+            coordsManual ? "bg-blue-100 text-blue-700" : "bg-stone-100 text-stone-500"
+          }`}
+        >
+          <MapPin className="w-4 h-4" /> Set location manually
+        </button>
+
+        {coordsManual && (
+          <div className="mb-3 rounded-xl bg-blue-50/60 border border-blue-100 p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Latitude">
+                <input
+                  className={inp}
+                  inputMode="decimal"
+                  value={lat}
+                  onChange={(e) => setLat(e.target.value)}
+                  placeholder="41.7245"
+                />
+              </Field>
+              <Field label="Longitude">
+                <input
+                  className={inp}
+                  inputMode="decimal"
+                  value={lng}
+                  onChange={(e) => setLng(e.target.value)}
+                  placeholder="-81.2461"
+                />
+              </Field>
+            </div>
+            <p className="text-xs text-stone-500 -mt-1">
+              In Google Maps, right-click the exact spot → click the lat,lng at the
+              top of the menu to copy, then paste here. Manual coords are used
+              as-is and won&apos;t be overwritten by geocoding.
+            </p>
+          </div>
+        )}
+
         {error && (
           <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">
             {error}
@@ -188,7 +240,9 @@ export function CustomerForm({
               : "Add customer"}
         </button>
         <p className="text-xs text-stone-400 text-center mt-3">
-          Saving geocodes the address for route optimization.
+          {coordsManual
+            ? "Saving keeps your manual location (no geocoding)."
+            : "Saving geocodes the address for route optimization."}
         </p>
       </div>
     </div>

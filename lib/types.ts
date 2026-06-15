@@ -25,6 +25,7 @@ export interface Customer {
   state: string | null;
   lat: number | null;
   lng: number | null;
+  coords_manual: boolean;
   phone: string | null;
   gate_code: string | null;
   notes: string | null;

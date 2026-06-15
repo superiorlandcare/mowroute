@@ -35,6 +35,11 @@ export interface CustomerInput {
   notes: string | null;
   meet_first: boolean;
   hold_until: string | null;
+  // Manual coordinate override (geocode escape hatch). When coords_manual is
+  // true, lat/lng are used as-is and geocoding is skipped.
+  coords_manual: boolean;
+  lat: number | null;
+  lng: number | null;
 }
 
 export async function saveCustomer(input: CustomerInput): Promise<ActionResult> {
@@ -44,10 +49,34 @@ export async function saveCustomer(input: CustomerInput): Promise<ActionResult> 
   const name = input.name?.trim();
   if (!name) return { error: "Customer name is required." };
 
-  // Geocode on save (spec §10). Best-effort: we only keep coordinates we trust
-  // (confident street-address match). Weak/fallback matches and empty results
-  // store null coords, which surfaces the "Not geocoded" flag in the UI.
-  const geo = await geocodeAddress(input.address, input.city, "OH");
+  // Two location paths:
+  // 1. Manual override — admin pinned the spot by hand (ORS couldn't). Use the
+  //    coords as-is and DON'T geocode, so a later edit never clobbers the pin.
+  // 2. Auto — geocode on save (spec §10), keeping only a confident match;
+  //    weak/empty results store null coords → the "Not geocoded" flag.
+  let coords: { lat: number | null; lng: number | null; coords_manual: boolean };
+  if (input.coords_manual) {
+    const { lat, lng } = input;
+    if (
+      typeof lat !== "number" ||
+      typeof lng !== "number" ||
+      Number.isNaN(lat) ||
+      Number.isNaN(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      return {
+        error:
+          "Manual location needs a valid latitude (−90…90) and longitude (−180…180).",
+      };
+    }
+    coords = { lat, lng, coords_manual: true };
+  } else {
+    const geo = await geocodeAddress(input.address, input.city, "OH");
+    coords = { lat: geo.lat, lng: geo.lng, coords_manual: false };
+  }
 
   const row = {
     name,
@@ -58,8 +87,7 @@ export async function saveCustomer(input: CustomerInput): Promise<ActionResult> 
     notes: input.notes,
     meet_first: input.meet_first,
     hold_until: input.hold_until,
-    lat: geo.lat,
-    lng: geo.lng,
+    ...coords,
   };
 
   const res = input.id
