@@ -18,6 +18,8 @@ import {
   Clock,
   StickyNote,
   Route,
+  Navigation,
+  ExternalLink,
   Settings,
   Receipt,
   LogOut,
@@ -67,6 +69,16 @@ function fmtElapsed(ms: number): string {
 function fmtTimer(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// Turn-by-turn deep links to a lat/lng for the major map apps (spec §8).
+function mapLinks(lat: number, lng: number) {
+  const dest = `${lat},${lng}`;
+  return {
+    google: `https://www.google.com/maps/dir/?api=1&destination=${dest}`,
+    apple: `https://maps.apple.com/?daddr=${dest}`,
+    waze: `https://waze.com/ul?ll=${dest}&navigate=yes`,
+  };
 }
 
 export function BoardClient({
@@ -465,8 +477,12 @@ function StopCard({
 
   const [skipOpen, setSkipOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [pending, startTransition] = useTransition();
+
+  const hasCoords = customer.lat != null && customer.lng != null;
+  const links = hasCoords ? mapLinks(customer.lat as number, customer.lng as number) : null;
 
   const tint = done
     ? "bg-green-50 border-green-300"
@@ -654,6 +670,23 @@ function StopCard({
             )}
           </button>
 
+          {/* Navigate — turn-by-turn to the stop's coords (crew + admin, no $) */}
+          {hasCoords && (
+            <button
+              onClick={() => {
+                setNavOpen((v) => !v);
+                setSkipOpen(false);
+                setNotesOpen(false);
+              }}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${
+                navOpen ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-600"
+              }`}
+              aria-label="Navigate"
+            >
+              <Navigation className="w-5 h-5" />
+            </button>
+          )}
+
           {visit.status === "pending" && (
             <button
               onClick={onStart}
@@ -693,6 +726,33 @@ function StopCard({
           )}
         </div>
       </div>
+
+      {navOpen && links && (
+        <div className="mt-3 pt-3 border-t border-stone-200">
+          <div className="text-xs font-bold uppercase tracking-wide text-blue-600 mb-2">
+            Navigate
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                ["Google", links.google],
+                ["Apple", links.apple],
+                ["Waze", links.waze],
+              ] as const
+            ).map(([label, href]) => (
+              <a
+                key={label}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-stone-100 text-stone-700 text-sm font-bold active:scale-[0.97] transition"
+              >
+                {label} <ExternalLink className="w-3.5 h-3.5 opacity-60" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {skipOpen && !done && !skipped && (
         <div className="mt-3 pt-3 border-t border-stone-200">
