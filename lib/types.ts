@@ -72,3 +72,23 @@ export interface Visit {
   service_type_snapshot: string | null;
   performed_by: string | null;
 }
+
+// crew_notes: append-only field log per customer (spec §4). authorName is joined
+// from profiles for display.
+export interface CrewNote {
+  id: string;
+  customer_id: string;
+  author_id: string | null;
+  body: string;
+  created_at: string;
+  authorName: string | null;
+}
+
+// time_entries: clock in/out per mower (spec §4). The clock bar is shift
+// time-tracking only — NOT the attribution source (per-login model).
+export interface TimeEntry {
+  id: string;
+  profile_id: string;
+  clock_in: string;
+  clock_out: string | null;
+}

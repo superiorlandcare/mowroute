@@ -1,15 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
 import { currentCycleMonday, isServiceDue, cadenceUnset, toISODate } from "@/lib/cycle";
-import type { Service, Customer, Visit } from "@/lib/types";
+import type { Service, Customer, Visit, CrewNote } from "@/lib/types";
 
 // One stop on the board: the service + its customer + the visit row that carries
-// live status for the current cycle.
+// live status for the current cycle, plus the customer's crew-note thread.
 export interface BoardItem {
   visit: Visit;
   service: Service;
   customer: Customer;
   performerName: string | null;
   cadenceUnset: boolean;
+  notes: CrewNote[];
 }
 
 // A customer parked in the "On hold" tray (future hold_until) — kept off the
@@ -99,6 +100,26 @@ export async function getBoardData(isAdmin: boolean): Promise<BoardData> {
     (profs ?? []).map((p) => [p.id as string, p.full_name as string]),
   );
 
+  // Crew-note threads for the customers on the board (spec §8). Append-only log,
+  // oldest first; author names resolved from the profiles map above.
+  const customerIds = [...new Set(due.map((d) => d.customer.id))];
+  const notesByCustomer = new Map<string, CrewNote[]>();
+  if (customerIds.length > 0) {
+    const { data: noteRows } = await supabase
+      .from("crew_notes")
+      .select("*")
+      .in("customer_id", customerIds)
+      .order("created_at", { ascending: true });
+    for (const n of (noteRows ?? []) as Omit<CrewNote, "authorName">[]) {
+      const list = notesByCustomer.get(n.customer_id) ?? [];
+      list.push({
+        ...n,
+        authorName: n.author_id ? nameById.get(n.author_id) ?? null : null,
+      });
+      notesByCustomer.set(n.customer_id, list);
+    }
+  }
+
   const items: BoardItem[] = [];
   for (const { service, customer } of due) {
     const visit = visitByService.get(service.id);
@@ -111,6 +132,7 @@ export async function getBoardData(isAdmin: boolean): Promise<BoardData> {
         ? nameById.get(visit.performed_by) ?? null
         : null,
       cadenceUnset: cadenceUnset(service),
+      notes: notesByCustomer.get(customer.id) ?? [],
     });
   }
 
