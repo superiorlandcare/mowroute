@@ -14,11 +14,15 @@ import {
   KeyRound,
   AlertTriangle,
   Pause,
+  Play,
+  Clock,
+  StickyNote,
   Settings,
   Receipt,
   LogOut,
 } from "lucide-react";
 import type { BoardData, BoardItem } from "@/lib/data/board";
+import type { ClockState } from "@/lib/data/clock";
 import type { Day } from "@/lib/types";
 import {
   DAYS,
@@ -28,7 +32,15 @@ import {
   money,
 } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
-import { completeVisit, skipVisit, undoVisit } from "./board-actions";
+import {
+  completeVisit,
+  skipVisit,
+  undoVisit,
+  startVisit,
+  clockIn,
+  clockOut,
+  addCrewNote,
+} from "./board-actions";
 import { signOut } from "./actions";
 
 type Scope = "All" | Day;
@@ -41,13 +53,29 @@ const STATUS_ORDER: Record<string, number> = {
   done: 3,
 };
 
+// "1h 04m" for shift elapsed time.
+function fmtElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${h}h ${String(m).padStart(2, "0")}m`;
+}
+
+// "12:05" for a running on-site timer.
+function fmtTimer(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 export function BoardClient({
   data,
+  clock,
   isAdmin,
   userName,
   role,
 }: {
   data: BoardData;
+  clock: ClockState;
   isAdmin: boolean;
   userName: string;
   role: string;
@@ -55,15 +83,25 @@ export function BoardClient({
   const [scope, setScope] = useState<Scope>("All");
   const [hideDone, setHideDone] = useState(false);
   const [live, setLive] = useState(false);
+  // `now` drives the live timers (shift + on-site). Null until mounted so SSR
+  // and the first client render agree (no hydration mismatch on times).
+  const [now, setNow] = useState<number | null>(null);
   const router = useRouter();
 
   const { items, held, cycleMonday } = data;
 
-  // Realtime (spec §6): subscribe to this cycle's `visits` so a complete/skip on
-  // one phone shows up on every other within a moment. We use each change only
-  // as a trigger to re-fetch the board via the server (router.refresh) — never
-  // reading the row payload — so the refreshed data still goes through
-  // getBoardData and stays dollar-stripped for crew (role gating intact).
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Realtime (spec §6): subscribe to this cycle's `visits` plus `crew_notes` and
+  // `time_entries` so a complete/skip, a new field note, or a clock in/out on one
+  // phone shows up on every other within a moment. Each change is used only as a
+  // trigger to re-fetch the board via the server (router.refresh) — we never read
+  // the row payload — so the refreshed data still goes through getBoardData and
+  // stays dollar-stripped for crew (role gating intact).
   useEffect(() => {
     const supabase = createClient();
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -73,7 +111,7 @@ export function BoardClient({
     };
 
     const channel = supabase
-      .channel(`board-visits-${cycleMonday}`)
+      .channel(`board-${cycleMonday}`)
       .on(
         "postgres_changes",
         {
@@ -82,6 +120,16 @@ export function BoardClient({
           table: "visits",
           filter: `service_date=eq.${cycleMonday}`,
         },
+        refresh,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "crew_notes" },
+        refresh,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "time_entries" },
         refresh,
       )
       .subscribe((status) => setLive(status === "SUBSCRIBED"));
@@ -240,7 +288,19 @@ export function BoardClient({
         })}
       </div>
 
-      <div className="px-5 mt-3 flex items-center justify-between">
+      {/* Clock bar (spec §8): shift time tracking only — not attribution */}
+      <div className="px-5 mt-4">
+        <ClockBar openEntry={clock.openEntry} now={now} userName={userName} />
+      </div>
+
+      {/* Who's on the clock — admin-only live view (spec §6 optional) */}
+      {isAdmin && (
+        <div className="px-5 mt-3">
+          <OnClockPanel onClock={clock.onClock} now={now} />
+        </div>
+      )}
+
+      <div className="px-5 mt-4 flex items-center justify-between">
         <span className="text-sm font-semibold text-stone-500">
           Working as <span className="text-stone-800">{userName}</span>
           <span className="font-mono text-[11px] text-stone-400 uppercase">
@@ -270,7 +330,7 @@ export function BoardClient({
                   </div>
                   <div className="space-y-3">
                     {group.map((i) => (
-                      <StopCard key={i.visit.id} item={i} isAdmin={isAdmin} />
+                      <StopCard key={i.visit.id} item={i} isAdmin={isAdmin} now={now} />
                     ))}
                   </div>
                 </div>
@@ -287,7 +347,7 @@ export function BoardClient({
                   </div>
                   <div className="space-y-3">
                     {group.map((i) => (
-                      <StopCard key={i.visit.id} item={i} isAdmin={isAdmin} />
+                      <StopCard key={i.visit.id} item={i} isAdmin={isAdmin} now={now} />
                     ))}
                   </div>
                 </div>
@@ -302,7 +362,7 @@ export function BoardClient({
         ) : (
           <div className="space-y-3">
             {visible.map((i) => (
-              <StopCard key={i.visit.id} item={i} isAdmin={isAdmin} />
+              <StopCard key={i.visit.id} item={i} isAdmin={isAdmin} now={now} />
             ))}
             {total === 0 && (
               <div className="text-center text-stone-400 text-sm py-8">
@@ -335,23 +395,40 @@ export function BoardClient({
   );
 }
 
-function StopCard({ item, isAdmin }: { item: BoardItem; isAdmin: boolean }) {
-  const { visit, service, customer, performerName, cadenceUnset } = item;
+function StopCard({
+  item,
+  isAdmin,
+  now,
+}: {
+  item: BoardItem;
+  isAdmin: boolean;
+  now: number | null;
+}) {
+  const { visit, service, customer, performerName, cadenceUnset, notes } = item;
   const done = visit.status === "done";
   const skipped = visit.status === "skipped";
+  const running = visit.status === "in_progress";
 
   const [skipOpen, setSkipOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [draft, setDraft] = useState("");
   const [pending, startTransition] = useTransition();
 
   const tint = done
     ? "bg-green-50 border-green-300"
     : skipped
       ? "bg-amber-50 border-amber-300"
-      : "bg-white border-stone-200";
+      : running
+        ? "bg-green-50 border-green-400"
+        : "bg-white border-stone-200";
 
   const onComplete = () =>
     startTransition(async () => {
       await completeVisit(visit.id);
+    });
+  const onStart = () =>
+    startTransition(async () => {
+      await startVisit(visit.id);
     });
   const onSkip = (reason: string) =>
     startTransition(async () => {
@@ -362,6 +439,14 @@ function StopCard({ item, isAdmin }: { item: BoardItem; isAdmin: boolean }) {
     startTransition(async () => {
       await undoVisit(visit.id);
     });
+  const submitNote = () => {
+    const text = draft.trim();
+    if (!text) return;
+    startTransition(async () => {
+      const res = await addCrewNote(customer.id, text);
+      if (!res.error) setDraft("");
+    });
+  };
 
   return (
     <div className={`rounded-2xl border p-4 transition ${tint}`}>
@@ -377,7 +462,9 @@ function StopCard({ item, isAdmin }: { item: BoardItem; isAdmin: boolean }) {
                 ? "bg-green-600 text-white"
                 : skipped
                   ? "bg-amber-400 text-white"
-                  : "border-2 border-stone-300 text-transparent"
+                  : running
+                    ? "border-2 border-green-500 text-green-600"
+                    : "border-2 border-stone-300 text-transparent"
             }`}
           >
             {skipped ? (
@@ -425,6 +512,12 @@ function StopCard({ item, isAdmin }: { item: BoardItem; isAdmin: boolean }) {
 
             {!done && !skipped && (
               <div className="flex flex-wrap gap-1.5 mt-2">
+                {running && now != null && visit.started_at && (
+                  <span className="inline-flex items-center gap-1 bg-green-600 text-white text-xs font-mono font-bold px-2 py-0.5 rounded">
+                    <Clock className="w-3 h-3" />{" "}
+                    {fmtTimer(now - Date.parse(visit.started_at))}
+                  </span>
+                )}
                 {customer.meet_first && (
                   <span className="inline-flex items-center gap-1 bg-amber-200 text-amber-900 text-xs font-bold px-2 py-0.5 rounded">
                     <Phone className="w-3 h-3" /> Text Katy first
@@ -456,11 +549,21 @@ function StopCard({ item, isAdmin }: { item: BoardItem; isAdmin: boolean }) {
             {done && (
               <div className="text-xs font-mono text-green-700 mt-1.5">
                 ✓ {performerName ?? "—"}
-                {visit.completed_at && (
+                {visit.completed_at && visit.started_at ? (
                   <>
                     {" · "}
+                    <Time iso={visit.started_at} />–
                     <Time iso={visit.completed_at} />
+                    {visit.duration_minutes != null &&
+                      ` · ${visit.duration_minutes} min`}
                   </>
+                ) : (
+                  visit.completed_at && (
+                    <>
+                      {" · "}
+                      <Time iso={visit.completed_at} />
+                    </>
+                  )
                 )}
               </div>
             )}
@@ -479,18 +582,41 @@ function StopCard({ item, isAdmin }: { item: BoardItem; isAdmin: boolean }) {
         </button>
 
         <div className="flex flex-col gap-2 shrink-0">
-          {skipped || done ? (
+          <button
+            onClick={() => {
+              setNotesOpen((v) => !v);
+              setSkipOpen(false);
+            }}
+            className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition ${
+              notesOpen ? "bg-stone-700 text-white" : "bg-stone-100 text-stone-600"
+            }`}
+            aria-label="Notes"
+          >
+            <StickyNote className="w-5 h-5" />
+            {notes.length > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-stone-700 text-white text-[10px] font-bold flex items-center justify-center">
+                {notes.length}
+              </span>
+            )}
+          </button>
+
+          {visit.status === "pending" && (
             <button
-              onClick={onUndo}
+              onClick={onStart}
               disabled={pending}
-              className="w-10 h-10 rounded-xl flex items-center justify-center bg-stone-100 text-stone-500 disabled:opacity-50"
-              aria-label="Undo"
+              className="w-10 h-10 rounded-xl flex items-center justify-center bg-green-50 text-green-600 disabled:opacity-50"
+              aria-label="Start"
             >
-              <Undo2 className="w-5 h-5" />
+              <Play className="w-5 h-5" />
             </button>
-          ) : (
+          )}
+
+          {(visit.status === "pending" || running) && (
             <button
-              onClick={() => setSkipOpen((v) => !v)}
+              onClick={() => {
+                setSkipOpen((v) => !v);
+                setNotesOpen(false);
+              }}
               disabled={pending}
               className={`w-10 h-10 rounded-xl flex items-center justify-center transition disabled:opacity-50 ${
                 skipOpen ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-600"
@@ -498,6 +624,17 @@ function StopCard({ item, isAdmin }: { item: BoardItem; isAdmin: boolean }) {
               aria-label="Skip"
             >
               <SkipForward className="w-5 h-5" />
+            </button>
+          )}
+
+          {(done || skipped || running) && (
+            <button
+              onClick={onUndo}
+              disabled={pending}
+              className="w-10 h-10 rounded-xl flex items-center justify-center bg-stone-100 text-stone-500 disabled:opacity-50"
+              aria-label="Undo"
+            >
+              <Undo2 className="w-5 h-5" />
             </button>
           )}
         </div>
@@ -520,6 +657,139 @@ function StopCard({ item, isAdmin }: { item: BoardItem; isAdmin: boolean }) {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {notesOpen && (
+        <div className="mt-3 pt-3 border-t border-stone-200">
+          <div className="text-xs font-bold uppercase tracking-wide text-stone-400 mb-2">
+            Notes
+          </div>
+          {customer.notes && (
+            <div className="text-xs mb-2 bg-amber-50 rounded-lg px-3 py-2">
+              <span className="font-bold text-amber-700 uppercase tracking-wide">
+                Standing · Katy
+              </span>
+              <div className="text-stone-700 mt-0.5">{customer.notes}</div>
+            </div>
+          )}
+          <div className="space-y-1.5 mb-3">
+            {notes.length === 0 && (
+              <div className="text-sm text-stone-400">No field notes yet.</div>
+            )}
+            {notes.map((n) => (
+              <div key={n.id} className="text-sm bg-stone-50 rounded-lg px-3 py-2">
+                <div className="text-stone-800">{n.body}</div>
+                <div className="text-xs font-mono text-stone-400 mt-0.5">
+                  {n.authorName ?? "—"} · <Time iso={n.created_at} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submitNote()}
+              placeholder="Add a note from the field…"
+              className="flex-1 rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:border-green-500"
+            />
+            <button
+              onClick={submitNote}
+              disabled={pending || !draft.trim()}
+              className="px-4 rounded-xl font-bold text-sm bg-stone-900 text-white disabled:bg-stone-100 disabled:text-stone-300"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Clock bar (spec §8): clock in → live elapsed → clock out. Shift time tracking
+// only — the "who" is always the signed-in user (per-login model).
+function ClockBar({
+  openEntry,
+  now,
+  userName,
+}: {
+  openEntry: ClockState["openEntry"];
+  now: number | null;
+  userName: string;
+}) {
+  const [pending, startTransition] = useTransition();
+  const onIn = () => startTransition(async () => void (await clockIn()));
+  const onOut = () => startTransition(async () => void (await clockOut()));
+
+  if (!openEntry) {
+    return (
+      <button
+        onClick={onIn}
+        disabled={pending}
+        className="w-full py-3 rounded-2xl bg-stone-900 text-white font-bold uppercase tracking-wide text-sm flex items-center justify-center gap-2 active:scale-[0.99] transition disabled:opacity-50"
+      >
+        <Clock className="w-4 h-4" /> Clock in
+      </button>
+    );
+  }
+
+  const elapsed =
+    now != null ? fmtElapsed(now - Date.parse(openEntry.clock_in)) : "—";
+  return (
+    <div className="bg-white rounded-2xl border border-stone-200 p-4 flex items-center justify-between">
+      <div>
+        <div className="text-xs font-bold uppercase tracking-wide text-green-600">
+          On the clock
+        </div>
+        <div className="font-bold">{userName}</div>
+        <div className="font-mono text-sm text-stone-500" suppressHydrationWarning>
+          {elapsed} elapsed
+        </div>
+      </div>
+      <button
+        onClick={onOut}
+        disabled={pending}
+        className="px-4 py-2 rounded-xl bg-amber-400 text-stone-900 font-bold text-sm disabled:opacity-50"
+      >
+        Clock out
+      </button>
+    </div>
+  );
+}
+
+// Admin-only live view of who's currently clocked in (spec §6 optional).
+function OnClockPanel({
+  onClock,
+  now,
+}: {
+  onClock: ClockState["onClock"];
+  now: number | null;
+}) {
+  return (
+    <div className="bg-white rounded-2xl border border-stone-200 p-4">
+      <div className="text-xs font-bold uppercase tracking-wide text-stone-400 mb-2 flex items-center gap-1">
+        <Clock className="w-3 h-3" /> On the clock · {onClock.length}
+      </div>
+      {onClock.length === 0 ? (
+        <div className="text-sm text-stone-400">Nobody clocked in.</div>
+      ) : (
+        <div className="space-y-1.5">
+          {onClock.map((p) => (
+            <div
+              key={p.profile_id}
+              className="flex items-center justify-between text-sm"
+            >
+              <span className="font-semibold text-stone-700">{p.name}</span>
+              <span
+                className="font-mono text-stone-500 text-xs"
+                suppressHydrationWarning
+              >
+                {now != null ? fmtElapsed(now - Date.parse(p.clock_in)) : "—"}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

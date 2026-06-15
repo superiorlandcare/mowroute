@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { getBoardData } from "@/lib/data/board";
+import { getClockState } from "@/lib/data/clock";
 import { BoardClient } from "./board-client";
 
 export const metadata = { title: "Board · MowRoute" };
@@ -11,13 +12,17 @@ export default async function HomePage() {
   const { user, profile } = await requireUser();
   const isAdmin = profile?.role === "admin";
   const name = profile?.full_name ?? user.email ?? "there";
-  const data = await getBoardData(isAdmin);
+  const [data, clock] = await Promise.all([
+    getBoardData(isAdmin),
+    getClockState(user.id, isAdmin),
+  ]);
 
   return (
     <div className="min-h-screen bg-stone-100 text-stone-900">
       <div className="max-w-md mx-auto pb-28">
         <BoardClient
           data={data}
+          clock={clock}
           isAdmin={isAdmin}
           userName={name}
           role={profile?.role ?? "no profile"}

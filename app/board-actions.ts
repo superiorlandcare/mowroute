@@ -7,8 +7,10 @@ import { getSessionProfile } from "@/lib/auth";
 export type ActionResult = { error?: string; ok?: boolean };
 
 // Every board mutation is auth-guarded here (fail fast with a clean message);
-// RLS on `visits` is the backstop (spec §5). Attribution is automatic — the
-// signed-in user is stamped as performed_by (the clock bar lands in Phase 5).
+// RLS is the backstop (spec §5). Attribution is automatic — the signed-in user
+// is stamped as performed_by. Per-login model: each mower works from their own
+// phone + login, so the clock bar is shift time-tracking only and does NOT
+// override attribution (a deliberate deviation from §8's shared-device wording).
 async function authedClient() {
   const { user, profile } = await getSessionProfile();
   if (!user || !profile) {
@@ -106,6 +108,85 @@ export async function undoVisit(visitId: string): Promise<ActionResult> {
       performed_by: null,
     })
     .eq("id", visitId);
+
+  if (res.error) return { error: res.error.message };
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// Start ▶ — arrive on site. Sets started_at + status in_progress so the card
+// shows a live timer (spec §8). Optional: a card can still go straight to Done.
+// No-op unless the visit is currently pending.
+export async function startVisit(visitId: string): Promise<ActionResult> {
+  const { error, supabase } = await authedClient();
+  if (error || !supabase) return { error };
+
+  const res = await supabase
+    .from("visits")
+    .update({ status: "in_progress", started_at: new Date().toISOString() })
+    .eq("id", visitId)
+    .eq("status", "pending");
+
+  if (res.error) return { error: res.error.message };
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Clock in / out — shift time tracking (spec §8). Writes time_entries for the
+// signed-in user only (RLS: profile_id = auth.uid()).
+// ---------------------------------------------------------------------------
+
+export async function clockIn(): Promise<ActionResult> {
+  const { error, supabase, uid } = await authedClient();
+  if (error || !supabase || !uid) return { error };
+
+  // Idempotent: if already on the clock, do nothing.
+  const { data: open } = await supabase
+    .from("time_entries")
+    .select("id")
+    .eq("profile_id", uid)
+    .is("clock_out", null)
+    .maybeSingle();
+  if (open) return { ok: true };
+
+  const res = await supabase.from("time_entries").insert({ profile_id: uid });
+  if (res.error) return { error: res.error.message };
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function clockOut(): Promise<ActionResult> {
+  const { error, supabase, uid } = await authedClient();
+  if (error || !supabase || !uid) return { error };
+
+  const res = await supabase
+    .from("time_entries")
+    .update({ clock_out: new Date().toISOString() })
+    .eq("profile_id", uid)
+    .is("clock_out", null);
+
+  if (res.error) return { error: res.error.message };
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// Add a crew note to a customer's append-only field log (spec §8). RLS requires
+// author_id = auth.uid(); visible to all, updates live (crew_notes realtime).
+export async function addCrewNote(
+  customerId: string,
+  body: string,
+): Promise<ActionResult> {
+  const { error, supabase, uid } = await authedClient();
+  if (error || !supabase || !uid) return { error };
+
+  const text = body.trim();
+  if (!text) return { error: "Note can't be empty." };
+  if (!customerId) return { error: "Missing customer." };
+
+  const res = await supabase
+    .from("crew_notes")
+    .insert({ customer_id: customerId, author_id: uid, body: text });
 
   if (res.error) return { error: res.error.message };
   revalidatePath("/");

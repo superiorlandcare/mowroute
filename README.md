@@ -43,8 +43,22 @@ every other within a moment (spec §6). Each change is used only as a trigger to
 re-fetch the board through the server (so the refresh stays dollar-stripped for
 crew); a small pulsing dot in the scoreboard header shows the live-connection
 status. No schema change — `visits` was already in the `supabase_realtime`
-publication from Phase 1. The clock bar, Start→Done timing, crew-note threads,
-billing, and route optimization come in later phases.
+publication from Phase 1.
+
+**Phase 5 — Timing + notes + clock** (done): the deferred Phase-3 items. A
+**clock bar** (clock in → live elapsed → clock out) writes `time_entries` for the
+signed-in user; an admin-only, live **"who's on the clock"** panel lists everyone
+currently clocked in. **Start→Done timing**: the green Start ▶ sets `started_at`
++ status `in_progress` with a live on-site timer; tapping Done stamps
+`completed_at` + `duration_minutes` (Start is optional — a card can still go
+straight to Done). **Crew notes**: each stop card shows the standing note
+(read-only) plus the customer's `crew_notes` thread and an input to add one,
+persisted with author + time and updating live. Attribution stays the signed-in
+user (per-login model) — the clock bar is shift time-tracking only, a deliberate
+deviation from §8's shared-device "clocked-in mower is the attribution source".
+The only schema change is `0002_crew_notes_realtime.sql` (adds `crew_notes` to
+the realtime publication); everything else was already in `0001`. Billing and
+route optimization come in later phases.
 
 ## Getting started
 
@@ -99,14 +113,16 @@ links are hidden, and visiting `/setup` or `/billing` redirects you back home.
 | Path | Purpose |
 |---|---|
 | `supabase/migrations/0001_init.sql` | Schema (§4) + RLS (§5) + realtime (§6) — paste into Supabase. |
+| `supabase/migrations/0002_crew_notes_realtime.sql` | Phase 5: adds `crew_notes` to the realtime publication (run after 0001). |
 | `lib/supabase/{client,server,admin}.ts` | Browser / server (RLS) / service-role Supabase clients. |
 | `lib/auth.ts` | `getSessionProfile`, `requireUser`, `requireAdmin` — route protection lives here, enforced in each Server Component (no middleware). |
 | `lib/geocode.ts` | OpenRouteService address → lat/lng (best-effort, on save). |
 | `lib/data/setup.ts` | Server-side fetch of customers + services + profiles. |
 | `lib/cycle.ts` | Cadence math: which services are due in the current Monday-anchored cycle (§9). |
-| `lib/data/board.ts` | Server-side board load: due services + lazy pending-visit creation + held tray. |
-| `app/board-client.tsx` | Mow board UI: scoreboard, day groups, stop cards, skip picker, held tray. |
-| `app/board-actions.ts` | Visit mutations (complete/skip/undo) as auth-guarded server actions. |
+| `lib/data/board.ts` | Server-side board load: due services + lazy pending-visit creation + held tray + crew-note threads. |
+| `lib/data/clock.ts` | Server-side clock state: the user's open shift + admin "who's on the clock". |
+| `app/board-client.tsx` | Mow board UI: scoreboard, day groups, stop cards, skip picker, held tray, clock bar, timers, notes. |
+| `app/board-actions.ts` | Auth-guarded server actions: visit complete/skip/undo/start, clock in/out, add crew note. |
 | `app/login/` | Email + password sign-in. |
 | `app/page.tsx` | Authenticated home = the Mow board (loads board data, renders `board-client`). |
 | `app/setup/` | Admin Setup: customers + services CRUD, reorder, geocode, crew (`actions.ts` = server actions). |
