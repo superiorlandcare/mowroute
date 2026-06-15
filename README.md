@@ -89,6 +89,15 @@ and back), never on the whole-route view. Calls run server-side with
 reuses `sort_order`, `window_*`, `service_minutes`, and the Phase-2 `lat`/`lng`.
 PWA polish (Phase 8) is the last step.
 
+**Location improvements** (done): (1) a **Navigate** action on each board stop
+card (crew + admin) opening turn-by-turn directions to the stored `lat`/`lng` in
+Google Maps / Apple Maps / Waze, shown only when coords exist. (2) a **manual
+coordinate override** in the Setup customer form for addresses ORS can't pin —
+an admin toggles "Set location manually", enters lat/lng, and those coords are
+used as-is, clear the "Not geocoded" flag, show a "Manual pin" badge, and are
+**never re-geocoded on a later edit** unless the admin turns the toggle back off.
+Adds `customers.coords_manual` (`0003_customer_coords_manual.sql`).
+
 ## Getting started
 
 ### 1. Create the Supabase project + run the migration
@@ -152,6 +161,7 @@ links are hidden, and visiting `/setup` or `/billing` redirects you back home.
 |---|---|
 | `supabase/migrations/0001_init.sql` | Schema (§4) + RLS (§5) + realtime (§6) — paste into Supabase. |
 | `supabase/migrations/0002_crew_notes_realtime.sql` | Phase 5: adds `crew_notes` to the realtime publication (run after 0001). |
+| `supabase/migrations/0003_customer_coords_manual.sql` | Adds `customers.coords_manual` (manual lat/lng override; run after 0002). |
 | `lib/supabase/{client,server,admin}.ts` | Browser / server (RLS) / service-role Supabase clients. |
 | `lib/auth.ts` | `getSessionProfile`, `requireUser`, `requireAdmin` — route protection lives here, enforced in each Server Component (no middleware). |
 | `lib/geocode.ts` | OpenRouteService address → lat/lng (best-effort, on save). |

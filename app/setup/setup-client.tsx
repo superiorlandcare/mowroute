@@ -211,6 +211,11 @@ function CustomerCard({
             <AlertTriangle className="w-3 h-3" /> Not geocoded
           </span>
         )}
+        {c.coords_manual && c.lat != null && c.lng != null && (
+          <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-2 py-0.5 rounded">
+            <MapPin className="w-3 h-3" /> Manual pin
+          </span>
+        )}
       </div>
 
       {c.notes && (
