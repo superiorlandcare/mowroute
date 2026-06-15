@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Tractor,
   Check,
@@ -26,6 +27,7 @@ import {
   serviceStyle,
   money,
 } from "@/lib/constants";
+import { createClient } from "@/lib/supabase/client";
 import { completeVisit, skipVisit, undoVisit } from "./board-actions";
 import { signOut } from "./actions";
 
@@ -52,8 +54,43 @@ export function BoardClient({
 }) {
   const [scope, setScope] = useState<Scope>("All");
   const [hideDone, setHideDone] = useState(false);
+  const [live, setLive] = useState(false);
+  const router = useRouter();
 
-  const { items, held } = data;
+  const { items, held, cycleMonday } = data;
+
+  // Realtime (spec §6): subscribe to this cycle's `visits` so a complete/skip on
+  // one phone shows up on every other within a moment. We use each change only
+  // as a trigger to re-fetch the board via the server (router.refresh) — never
+  // reading the row payload — so the refreshed data still goes through
+  // getBoardData and stays dollar-stripped for crew (role gating intact).
+  useEffect(() => {
+    const supabase = createClient();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => router.refresh(), 250); // coalesce bursts
+    };
+
+    const channel = supabase
+      .channel(`board-visits-${cycleMonday}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "visits",
+          filter: `service_date=eq.${cycleMonday}`,
+        },
+        refresh,
+      )
+      .subscribe((status) => setLive(status === "SUBSCRIBED"));
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
+  }, [cycleMonday, router]);
 
   // Day focus is a soft filter — "All" shows the whole route grouped by day.
   const inScope = useMemo(
@@ -130,7 +167,14 @@ export function BoardClient({
             <span className="font-extrabold uppercase tracking-tight text-sm">
               Route Board
             </span>
-            <span className="text-[11px] font-mono text-stone-400 uppercase">
+            <span className="text-[11px] font-mono text-stone-400 uppercase flex items-center gap-1.5">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  live ? "bg-green-400 animate-pulse" : "bg-stone-600"
+                }`}
+                aria-hidden
+              />
+              <span className="sr-only">{live ? "Live" : "Offline"}</span>
               {scope === "All" ? "Whole route" : DAY_FULL[scope]}
             </span>
           </div>
