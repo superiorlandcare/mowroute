@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionProfile } from "@/lib/auth";
+import { isServiceDue, parseISODate, toISODate } from "@/lib/cycle";
+import { optimizeRoute, type OptimizeStop } from "@/lib/optimize";
+import { DAYS } from "@/lib/constants";
 
 export type ActionResult = { error?: string; ok?: boolean };
 
@@ -17,6 +20,15 @@ async function authedClient() {
     return { error: "Not signed in." as string, supabase: null, uid: null };
   }
   return { error: undefined, supabase: await createClient(), uid: profile.id };
+}
+
+// Admin-only gate for the optimize action (spec §5: only admin reorders).
+async function adminClient() {
+  const { profile } = await getSessionProfile();
+  if (profile?.role !== "admin") {
+    return { error: "Not authorized." as string, supabase: null };
+  }
+  return { error: undefined, supabase: await createClient() };
 }
 
 // Tap → done. Snapshots the price + type at completion so billing history never
@@ -191,4 +203,124 @@ export async function addCrewNote(
   if (res.error) return { error: res.error.message };
   revalidatePath("/");
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Optimize route (spec §10) — admin-only. Reorders ONE soft day's stops into an
+// efficient driving order via ORS /optimization (VROOM), writing services.
+// sort_order so the board re-sorts. Manual drag in Setup still overrides after.
+// Un-geocoded stops are excluded and left in place; the shop is start+end.
+// ---------------------------------------------------------------------------
+
+export type OptimizeResultSummary = {
+  error?: string;
+  ok?: boolean;
+  optimized?: number; // stops placed into an order
+  skipped?: number; // excluded — no usable coords
+  unassigned?: number; // geocoded but ORS couldn't fit (e.g. infeasible window)
+};
+
+type DayServiceRow = {
+  id: string;
+  sort_order: number;
+  service_minutes: number;
+  window_start: string | null;
+  window_end: string | null;
+  interval: string;
+  anchor_date: string | null;
+  customers: {
+    active: boolean;
+    hold_until: string | null;
+    lat: number | null;
+    lng: number | null;
+  } | null;
+};
+
+export async function optimizeDay(
+  day: string,
+  cycleMonday: string,
+): Promise<OptimizeResultSummary> {
+  const { error, supabase } = await adminClient();
+  if (error || !supabase) return { error };
+  if (!DAYS.includes(day as (typeof DAYS)[number])) {
+    return { error: "Optimize works on a single focused day." };
+  }
+
+  const today = toISODate(new Date());
+
+  const { data: rows } = await supabase
+    .from("services")
+    .select(
+      "id, sort_order, service_minutes, window_start, window_end, interval, anchor_date, customers(active, hold_until, lat, lng)",
+    )
+    .eq("active", true)
+    .eq("day", day);
+
+  const services = (rows ?? []) as unknown as DayServiceRow[];
+
+  // This day's stops that actually belong on the current cycle's route.
+  const onRoute = services.filter((s) => {
+    const c = s.customers;
+    if (!c || !c.active) return false;
+    if (c.hold_until && c.hold_until > today) return false; // held
+    return isServiceDue(
+      { interval: s.interval as never, anchor_date: s.anchor_date },
+      cycleMonday,
+    );
+  });
+
+  const geocoded = onRoute.filter(
+    (s) => s.customers?.lat != null && s.customers?.lng != null,
+  );
+  const skipped = onRoute.length - geocoded.length;
+
+  if (geocoded.length === 0) {
+    return {
+      error: "No geocoded stops to optimize on this day.",
+      optimized: 0,
+      skipped,
+    };
+  }
+
+  const stops: OptimizeStop[] = geocoded.map((s) => ({
+    serviceId: s.id,
+    lng: s.customers!.lng as number,
+    lat: s.customers!.lat as number,
+    serviceMinutes: s.service_minutes,
+    windowStart: s.window_start,
+    windowEnd: s.window_end,
+  }));
+
+  // The concrete date of this soft day within the current cycle.
+  const dayDate = parseISODate(cycleMonday);
+  dayDate.setDate(dayDate.getDate() + DAYS.indexOf(day as (typeof DAYS)[number]));
+  const dayISO = toISODate(dayDate);
+
+  const outcome = await optimizeRoute(stops, dayISO);
+  if (!outcome.ok) return { error: outcome.error, skipped };
+
+  const ordered = outcome.result.orderedServiceIds;
+
+  // Permute only the assigned stops among their OWN existing sort_order slots, so
+  // un-geocoded/unassigned stops and other days keep their positions.
+  const slotById = new Map(geocoded.map((s) => [s.id, s.sort_order]));
+  const slots = ordered
+    .map((id) => slotById.get(id))
+    .filter((v): v is number => v != null)
+    .sort((a, b) => a - b);
+
+  const updates = ordered.map((id, i) =>
+    supabase.from("services").update({ sort_order: slots[i] }).eq("id", id),
+  );
+  const results = await Promise.all(updates);
+  const writeErr = results.find((r) => r.error);
+  if (writeErr?.error) return { error: writeErr.error.message };
+
+  revalidatePath("/");
+  return {
+    ok: true,
+    optimized: ordered.length,
+    skipped,
+    unassigned: outcome.result.unassignedServiceIds.length,
+  };
 }

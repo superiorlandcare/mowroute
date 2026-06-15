@@ -72,6 +72,23 @@ months never drift. Admin-only and money: `requireAdmin` route guard, RLS
 backstop, no billing link in the crew nav. No schema change — `invoices` already
 existed in `0001`. Route optimization and PWA polish come next.
 
+**Phase 7 — Optimization** (done): an admin-only **Optimize** button on the Mow
+board that reorders a focused day's route via OpenRouteService `/optimization`
+(VROOM single-vehicle TSP). It sends that day's due, geocoded stops as `jobs`
+(`location:[lng,lat]`, `service: service_minutes*60`, `time_windows` from
+`window_start`/`window_end` where set) and one `vehicle` whose `start`/`end` is
+the shop and whose `time_window` is the workday — all from server-only env vars
+(`DEPOT_LAT`, `DEPOT_LNG`, `WORKDAY_START`, `WORKDAY_END`); with no depot set it
+falls back to an open TSP. The returned order is written to `services.sort_order`
+(after a confirm, since it overwrites the manual arrangement) so the board
+re-sorts; manual drag in Setup still overrides afterward. Un-geocoded stops are
+excluded and left in place, reported as "N skipped (not geocoded)". The button
+shows only on a single focused day (per-day = a real workday route from the shop
+and back), never on the whole-route view. Calls run server-side with
+`ORS_API_KEY` and fail gracefully if ORS is unreachable. No schema change —
+reuses `sort_order`, `window_*`, `service_minutes`, and the Phase-2 `lat`/`lng`.
+PWA polish (Phase 8) is the last step.
+
 ## Getting started
 
 ### 1. Create the Supabase project + run the migration
@@ -108,6 +125,15 @@ npm install
 npm run dev
 ```
 
+Server-only vars (set in Vercel, never `NEXT_PUBLIC_`):
+
+| Var | Used by | Notes |
+|---|---|---|
+| `SUPABASE_SERVICE_ROLE_KEY` | crew account creation (Setup) | server-only modules only |
+| `ORS_API_KEY` | geocoding (Setup) + route optimization (board) | free OpenRouteService key |
+| `DEPOT_LAT`, `DEPOT_LNG` | optimize (vehicle start+end = shop) | omit → open TSP fallback |
+| `WORKDAY_START`, `WORKDAY_END` | optimize (vehicle time window) | `HH:MM`; omit → no window constraint |
+
 Open <http://localhost:3000>. You'll be redirected to `/login`. Sign in as Katy
 (admin) — you'll see the Setup/Billing links. Sign in as the crew user — those
 links are hidden, and visiting `/setup` or `/billing` redirects you back home.
@@ -129,6 +155,7 @@ links are hidden, and visiting `/setup` or `/billing` redirects you back home.
 | `lib/supabase/{client,server,admin}.ts` | Browser / server (RLS) / service-role Supabase clients. |
 | `lib/auth.ts` | `getSessionProfile`, `requireUser`, `requireAdmin` — route protection lives here, enforced in each Server Component (no middleware). |
 | `lib/geocode.ts` | OpenRouteService address → lat/lng (best-effort, on save). |
+| `lib/optimize.ts` | OpenRouteService `/optimization` (VROOM) client — server-only, fails gracefully. |
 | `lib/data/setup.ts` | Server-side fetch of customers + services + profiles. |
 | `lib/cycle.ts` | Cadence math: which services are due in the current Monday-anchored cycle (§9). |
 | `lib/data/board.ts` | Server-side board load: due services + lazy pending-visit creation + held tray + crew-note threads. |
