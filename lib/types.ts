@@ -54,3 +54,21 @@ export interface Service {
 export interface CustomerWithServices extends Customer {
   services: Service[];
 }
+
+export type VisitStatus = "pending" | "in_progress" | "done" | "skipped";
+
+// visits: operational route status AND the permanent billing ledger (spec §9).
+export interface Visit {
+  id: string;
+  service_id: string;
+  customer_id: string;
+  service_date: string; // Monday of the cycle this visit belongs to
+  status: VisitStatus;
+  skip_reason: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_minutes: number | null;
+  price_snapshot: number | null;
+  service_type_snapshot: string | null;
+  performed_by: string | null;
+}

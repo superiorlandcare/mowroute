@@ -23,6 +23,16 @@ export const INTERVALS: Interval[] = [
 // Common service types — free text in the DB, these are the quick picks.
 export const SERVICE_TYPES = ["Mow", "Ditch cut", "Treatment"] as const;
 
+// Skip reasons shown on the board's skip picker (spec §4, stored in skip_reason).
+export const SKIP_REASONS = [
+  "Locked gate",
+  "Dog out",
+  "Too wet",
+  "Customer asked",
+  "Equipment issue",
+  "Other",
+] as const;
+
 // Badge styling per service type (spec §12: Mow green, Ditch cut orange, Treatment violet).
 export const SERVICE_STYLE: Record<string, string> = {
   Mow: "bg-green-100 text-green-700",
