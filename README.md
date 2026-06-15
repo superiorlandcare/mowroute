@@ -33,8 +33,18 @@ service's `interval` + `anchor_date` (weekly every cycle, biweekly every other,
 monthly/every-other-month on the calendar), anchored to the Monday of the cycle.
 Non-weekly services with no anchor are shown every cycle and flagged "cadence not
 set" so nothing is silently missed. Customers with a future `hold_until` drop
-into an "On hold" tray. The clock bar, Start→Done timing, crew-note threads,
-realtime sync, billing, and route optimization come in later phases.
+into an "On hold" tray. Board dollars (the scoreboard "$ booked" and per-service
+prices) are admin-only — for crew they're stripped from the payload server-side,
+not just hidden.
+
+**Phase 4 — Realtime** (done): the board subscribes to the current cycle's
+`visits` over Supabase Realtime, so a complete/skip/undo on one phone shows up on
+every other within a moment (spec §6). Each change is used only as a trigger to
+re-fetch the board through the server (so the refresh stays dollar-stripped for
+crew); a small pulsing dot in the scoreboard header shows the live-connection
+status. No schema change — `visits` was already in the `supabase_realtime`
+publication from Phase 1. The clock bar, Start→Done timing, crew-note threads,
+billing, and route optimization come in later phases.
 
 ## Getting started
 
