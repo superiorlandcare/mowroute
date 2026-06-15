@@ -37,3 +37,21 @@ export function serviceStyle(type: string): string {
 export function money(p: number | null | undefined): string {
   return p == null ? "—" : `$${p}`;
 }
+
+// Skip reasons (spec §4), stored in visits.skip_reason.
+export const SKIP_REASONS = [
+  "Locked gate",
+  "Dog out",
+  "Too wet",
+  "Customer asked",
+  "Equipment issue",
+  "Other",
+] as const;
+
+// Sort order on the board: pending → in-progress → skipped → done (spec §8).
+export const STATUS_ORDER: Record<string, number> = {
+  pending: 0,
+  in_progress: 1,
+  skipped: 2,
+  done: 3,
+};

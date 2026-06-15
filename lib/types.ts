@@ -54,3 +54,30 @@ export interface Service {
 export interface CustomerWithServices extends Customer {
   services: Service[];
 }
+
+export type VisitStatus = "pending" | "in_progress" | "done" | "skipped";
+
+export interface Visit {
+  id: string;
+  service_id: string;
+  customer_id: string;
+  service_date: string;
+  status: VisitStatus;
+  skip_reason: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_minutes: number | null;
+  price_snapshot: number | null;
+  service_type_snapshot: string | null;
+  performed_by: string | null;
+}
+
+// A single card on the board: the cycle's visit + the service + the customer.
+export interface BoardRow {
+  visit: Visit;
+  service: Service;
+  customer: Customer;
+}
+
+export type ActionResult = { error?: string; ok?: boolean };
+
