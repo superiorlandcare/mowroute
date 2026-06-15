@@ -47,3 +47,19 @@ export function serviceStyle(type: string): string {
 export function money(p: number | null | undefined): string {
   return p == null ? "—" : `$${p}`;
 }
+
+// Full month names for the Billing month nav / labels (spec §11).
+export const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;

@@ -57,8 +57,20 @@ persisted with author + time and updating live. Attribution stays the signed-in
 user (per-login model) — the clock bar is shift time-tracking only, a deliberate
 deviation from §8's shared-device "clocked-in mower is the attribution source".
 The only schema change is `0002_crew_notes_realtime.sql` (adds `crew_notes` to
-the realtime publication); everything else was already in `0001`. Billing and
-route optimization come in later phases.
+the realtime publication); everything else was already in `0001`.
+
+**Phase 6 — Billing** (done): the admin-only `/billing` screen (spec §11). Month
+nav (‹ June 2026 ›), a dark header with the month's total billed, cut count,
+account count, and an Open vs Paid split, then one card per customer grouped from
+that month's **completed** visits — each service a sub-line (`N cuts × $price`
+with the individual dates as chips) and a customer monthly total. Each card has
+an Open → Invoice sent → Paid control that upserts the `invoices` row
+(`status`/`sent_at`/`paid_at`, keyed by customer + `period_month`) and tints the
+card; Paid totals move from Open to Paid in the header. Totals are summed from
+`price_snapshot` (the value stamped at completion), never live prices, so past
+months never drift. Admin-only and money: `requireAdmin` route guard, RLS
+backstop, no billing link in the crew nav. No schema change — `invoices` already
+existed in `0001`. Route optimization and PWA polish come next.
 
 ## Getting started
 
@@ -126,4 +138,5 @@ links are hidden, and visiting `/setup` or `/billing` redirects you back home.
 | `app/login/` | Email + password sign-in. |
 | `app/page.tsx` | Authenticated home = the Mow board (loads board data, renders `board-client`). |
 | `app/setup/` | Admin Setup: customers + services CRUD, reorder, geocode, crew (`actions.ts` = server actions). |
-| `app/billing/` | Admin-only route stub (full screen in Phase 6). |
+| `app/billing/` | Admin-only monthly billing: per-customer totals/dates + Open/Sent/Paid (`actions.ts`, `status-control.tsx`). |
+| `lib/data/billing.ts` | Server-side billing aggregation: completed visits by month, summed from `price_snapshot`. |
