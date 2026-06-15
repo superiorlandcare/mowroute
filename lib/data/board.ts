@@ -30,7 +30,11 @@ type ServiceWithCustomer = Service & { customer: Customer | null };
 // All data the Mow board needs for the current cycle. RLS lets any authed user
 // read; the lazy pending-visit creation below also runs under the user's token
 // (visits insert policy is `with check (true)` — spec §5).
-export async function getBoardData(): Promise<BoardData> {
+//
+// `isAdmin` gates money: crew never see revenue/pricing on the board, so for
+// non-admins we strip every dollar field (service price + visit price_snapshot)
+// out of the payload entirely — not just hide it in the UI.
+export async function getBoardData(isAdmin: boolean): Promise<BoardData> {
   const supabase = await createClient();
   const cycleMonday = currentCycleMonday();
   const today = toISODate(new Date());
@@ -100,8 +104,8 @@ export async function getBoardData(): Promise<BoardData> {
     const visit = visitByService.get(service.id);
     if (!visit) continue; // exists after the upsert above
     items.push({
-      visit,
-      service,
+      visit: isAdmin ? visit : { ...visit, price_snapshot: null },
+      service: isAdmin ? service : { ...service, price: null },
       customer,
       performerName: visit.performed_by
         ? nameById.get(visit.performed_by) ?? null
@@ -110,11 +114,13 @@ export async function getBoardData(): Promise<BoardData> {
     });
   }
 
-  return {
-    cycleMonday,
-    items,
-    held: [...held.values()].sort((a, b) =>
-      a.customer.name.localeCompare(b.customer.name),
-    ),
-  };
+  const heldList = [...held.values()]
+    .map((h) =>
+      isAdmin
+        ? h
+        : { ...h, services: h.services.map((s) => ({ ...s, price: null })) },
+    )
+    .sort((a, b) => a.customer.name.localeCompare(b.customer.name));
+
+  return { cycleMonday, items, held: heldList };
 }

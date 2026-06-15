@@ -11,7 +11,7 @@ export default async function HomePage() {
   const { user, profile } = await requireUser();
   const isAdmin = profile?.role === "admin";
   const name = profile?.full_name ?? user.email ?? "there";
-  const data = await getBoardData();
+  const data = await getBoardData(isAdmin);
 
   return (
     <div className="min-h-screen bg-stone-100 text-stone-900">

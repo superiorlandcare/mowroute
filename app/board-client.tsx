@@ -151,9 +151,12 @@ export function BoardClient({
               <div className="font-mono text-2xl font-bold text-green-400">
                 {pct}%
               </div>
-              <div className="font-mono text-sm text-stone-400 mt-1">
-                ${booked} booked
-              </div>
+              {/* Revenue is admin-only — crew never see dollars on the board */}
+              {isAdmin && (
+                <div className="font-mono text-sm text-stone-400 mt-1">
+                  ${booked} booked
+                </div>
+              )}
             </div>
           </div>
           <div className="h-4 rounded-full bg-stone-800 overflow-hidden flex">
@@ -223,7 +226,7 @@ export function BoardClient({
                   </div>
                   <div className="space-y-3">
                     {group.map((i) => (
-                      <StopCard key={i.visit.id} item={i} />
+                      <StopCard key={i.visit.id} item={i} isAdmin={isAdmin} />
                     ))}
                   </div>
                 </div>
@@ -240,7 +243,7 @@ export function BoardClient({
                   </div>
                   <div className="space-y-3">
                     {group.map((i) => (
-                      <StopCard key={i.visit.id} item={i} />
+                      <StopCard key={i.visit.id} item={i} isAdmin={isAdmin} />
                     ))}
                   </div>
                 </div>
@@ -255,7 +258,7 @@ export function BoardClient({
         ) : (
           <div className="space-y-3">
             {visible.map((i) => (
-              <StopCard key={i.visit.id} item={i} />
+              <StopCard key={i.visit.id} item={i} isAdmin={isAdmin} />
             ))}
             {total === 0 && (
               <div className="text-center text-stone-400 text-sm py-8">
@@ -288,7 +291,7 @@ export function BoardClient({
   );
 }
 
-function StopCard({ item }: { item: BoardItem }) {
+function StopCard({ item, isAdmin }: { item: BoardItem; isAdmin: boolean }) {
   const { visit, service, customer, performerName, cadenceUnset } = item;
   const done = visit.status === "done";
   const skipped = visit.status === "skipped";
@@ -361,9 +364,12 @@ function StopCard({ item }: { item: BoardItem }) {
                   {service.service_type}
                 </span>
               )}
-              <span className="font-mono text-sm font-bold text-stone-700">
-                {money(service.price)}
-              </span>
+              {/* Price is admin-only — crew never see dollars on the board */}
+              {isAdmin && (
+                <span className="font-mono text-sm font-bold text-stone-700">
+                  {money(service.price)}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1 text-sm text-stone-500 mt-0.5">
               <MapPin className="w-3.5 h-3.5 shrink-0" />
