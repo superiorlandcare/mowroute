@@ -23,7 +23,18 @@ Requires `SUPABASE_SERVICE_ROLE_KEY` (crew creation) and, for geocoding,
 `ORS_API_KEY` — saving still works without the ORS key, customers just show a
 "Not geocoded" flag.
 
-The Mow board, realtime, billing, and route optimization come in later phases.
+**Phase 3 — Mow board** (done): the default `/` screen for crew + admin. The
+whole route grouped by soft day labels with a single-day focus, a live
+scoreboard (done/total, %, "$ booked", turf-stripe bar), tap-to-complete,
+skip-with-reason, and undo — each writing the permanent `visits` row with
+`performed_by` stamped automatically from the signed-in user. Pending visits are
+created lazily for every service *due this cycle*: cadence is computed from each
+service's `interval` + `anchor_date` (weekly every cycle, biweekly every other,
+monthly/every-other-month on the calendar), anchored to the Monday of the cycle.
+Non-weekly services with no anchor are shown every cycle and flagged "cadence not
+set" so nothing is silently missed. Customers with a future `hold_until` drop
+into an "On hold" tray. The clock bar, Start→Done timing, crew-note threads,
+realtime sync, billing, and route optimization come in later phases.
 
 ## Getting started
 
@@ -82,7 +93,11 @@ links are hidden, and visiting `/setup` or `/billing` redirects you back home.
 | `lib/auth.ts` | `getSessionProfile`, `requireUser`, `requireAdmin` — route protection lives here, enforced in each Server Component (no middleware). |
 | `lib/geocode.ts` | OpenRouteService address → lat/lng (best-effort, on save). |
 | `lib/data/setup.ts` | Server-side fetch of customers + services + profiles. |
+| `lib/cycle.ts` | Cadence math: which services are due in the current Monday-anchored cycle (§9). |
+| `lib/data/board.ts` | Server-side board load: due services + lazy pending-visit creation + held tray. |
+| `app/board-client.tsx` | Mow board UI: scoreboard, day groups, stop cards, skip picker, held tray. |
+| `app/board-actions.ts` | Visit mutations (complete/skip/undo) as auth-guarded server actions. |
 | `app/login/` | Email + password sign-in. |
-| `app/page.tsx` | Authenticated home (Mow board placeholder until Phase 3). |
+| `app/page.tsx` | Authenticated home = the Mow board (loads board data, renders `board-client`). |
 | `app/setup/` | Admin Setup: customers + services CRUD, reorder, geocode, crew (`actions.ts` = server actions). |
 | `app/billing/` | Admin-only route stub (full screen in Phase 6). |
