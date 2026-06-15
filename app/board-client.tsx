@@ -17,6 +17,7 @@ import {
   Play,
   Clock,
   StickyNote,
+  Route,
   Settings,
   Receipt,
   LogOut,
@@ -40,6 +41,7 @@ import {
   clockIn,
   clockOut,
   addCrewNote,
+  optimizeDay,
 } from "./board-actions";
 import { signOut } from "./actions";
 
@@ -86,9 +88,44 @@ export function BoardClient({
   // `now` drives the live timers (shift + on-site). Null until mounted so SSR
   // and the first client render agree (no hydration mismatch on times).
   const [now, setNow] = useState<number | null>(null);
+  const [optimizing, startOptimize] = useTransition();
+  const [optMsg, setOptMsg] = useState<string | null>(null);
   const router = useRouter();
 
   const { items, held, cycleMonday } = data;
+
+  // Focus a soft day (clears any stale optimize message).
+  const focusDay = (d: Scope) => {
+    setScope(d);
+    setOptMsg(null);
+  };
+
+  // Optimize the focused day's route via ORS (admin-only, spec §10). Confirm
+  // first since it overwrites the current manual arrangement.
+  const runOptimize = () => {
+    if (scope === "All") return;
+    const label = DAY_FULL[scope];
+    if (
+      !window.confirm(
+        `Apply the optimized driving order for ${label}? This overwrites the current arrangement (you can still drag to reorder afterward).`,
+      )
+    )
+      return;
+    startOptimize(async () => {
+      setOptMsg(null);
+      const res = await optimizeDay(scope, cycleMonday);
+      if (res.error) {
+        setOptMsg(res.error);
+        return;
+      }
+      const parts = [
+        `Optimized ${res.optimized} stop${res.optimized === 1 ? "" : "s"}`,
+      ];
+      if (res.skipped) parts.push(`${res.skipped} skipped (not geocoded)`);
+      if (res.unassigned) parts.push(`${res.unassigned} couldn't be scheduled`);
+      setOptMsg(parts.join(" · "));
+    });
+  };
 
   useEffect(() => {
     setNow(Date.now());
@@ -274,7 +311,7 @@ export function BoardClient({
           return (
             <button
               key={d}
-              onClick={() => setScope(d)}
+              onClick={() => focusDay(d)}
               className={`py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition ${
                 scope === d
                   ? "bg-stone-900 text-white"
@@ -287,6 +324,23 @@ export function BoardClient({
           );
         })}
       </div>
+
+      {/* Optimize route — admin-only, single focused day (spec §10) */}
+      {isAdmin && scope !== "All" && (
+        <div className="px-5 mt-3">
+          <button
+            onClick={runOptimize}
+            disabled={optimizing}
+            className="w-full py-2.5 rounded-2xl border border-stone-300 bg-white text-stone-700 font-bold uppercase tracking-wide text-sm flex items-center justify-center gap-2 active:scale-[0.99] transition disabled:opacity-50"
+          >
+            <Route className="w-4 h-4" />
+            {optimizing ? "Optimizing…" : `Optimize ${DAY_FULL[scope]}`}
+          </button>
+          {optMsg && (
+            <div className="text-xs text-stone-500 mt-2 text-center">{optMsg}</div>
+          )}
+        </div>
+      )}
 
       {/* Clock bar (spec §8): shift time tracking only — not attribution */}
       <div className="px-5 mt-4">
