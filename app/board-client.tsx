@@ -479,6 +479,7 @@ function StopCard({
   const [notesOpen, setNotesOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [actionErr, setActionErr] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const hasCoords = customer.lat != null && customer.lng != null;
@@ -492,29 +493,30 @@ function StopCard({
         ? "bg-green-50 border-green-400"
         : "bg-white border-stone-200";
 
-  const onComplete = () =>
+  // Surface a failed mutation (e.g. a tap while offline) instead of silently
+  // doing nothing — the crew works in low-signal areas.
+  const run = (fn: () => Promise<{ error?: string } | undefined>) =>
     startTransition(async () => {
-      await completeVisit(visit.id);
+      setActionErr(null);
+      const res = await fn();
+      if (res?.error) setActionErr(res.error);
     });
-  const onStart = () =>
-    startTransition(async () => {
-      await startVisit(visit.id);
-    });
-  const onSkip = (reason: string) =>
-    startTransition(async () => {
-      setSkipOpen(false);
-      await skipVisit(visit.id, reason);
-    });
-  const onUndo = () =>
-    startTransition(async () => {
-      await undoVisit(visit.id);
-    });
+
+  const onComplete = () => run(() => completeVisit(visit.id));
+  const onStart = () => run(() => startVisit(visit.id));
+  const onSkip = (reason: string) => {
+    setSkipOpen(false);
+    run(() => skipVisit(visit.id, reason));
+  };
+  const onUndo = () => run(() => undoVisit(visit.id));
   const submitNote = () => {
     const text = draft.trim();
     if (!text) return;
     startTransition(async () => {
+      setActionErr(null);
       const res = await addCrewNote(customer.id, text);
-      if (!res.error) setDraft("");
+      if (res.error) setActionErr(res.error);
+      else setDraft("");
     });
   };
 
@@ -726,6 +728,16 @@ function StopCard({
           )}
         </div>
       </div>
+
+      {actionErr && (
+        <div
+          role="alert"
+          className="mt-2 flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5"
+        >
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          {actionErr} — tap to retry.
+        </div>
+      )}
 
       {navOpen && links && (
         <div className="mt-3 pt-3 border-t border-stone-200">
