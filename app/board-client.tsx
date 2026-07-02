@@ -48,13 +48,17 @@ import {
   optimizeDay,
 } from "./board-actions";
 import { signOut } from "./actions";
+import { ActiveJob, fmtTimer } from "./active-job";
 
 type Scope = "All" | Day;
 
-// Status order on the list: pending → in-progress → skipped → done (spec §8).
+// Status order on the list: skipped/done sink, everything else keeps its route
+// position. in_progress deliberately ranks WITH pending — a just-started job
+// must not jump away from where the crew was working (it also gets the sticky
+// active-job bar up top). The sort is stable, so route order is preserved.
 const STATUS_ORDER: Record<string, number> = {
   pending: 0,
-  in_progress: 1,
+  in_progress: 0,
   skipped: 2,
   done: 3,
 };
@@ -65,12 +69,6 @@ function fmtElapsed(ms: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   return `${h}h ${String(m).padStart(2, "0")}m`;
-}
-
-// "12:05" for a running on-site timer.
-function fmtTimer(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 export function BoardClient({
@@ -208,6 +206,33 @@ export function BoardClient({
     ? sorted.filter((i) => i.visit.status !== "done")
     : sorted;
 
+  // The sticky active-job bar tracks the most recently started running visit,
+  // across ALL days (a running timer matters regardless of the focused scope).
+  const running = items.filter(
+    (i) => i.visit.status === "in_progress" && i.visit.started_at,
+  );
+  const active = running.length
+    ? running.reduce((a, b) =>
+        Date.parse(a.visit.started_at as string) >=
+        Date.parse(b.visit.started_at as string)
+          ? a
+          : b,
+      )
+    : null;
+  // Up next: the following pending stops in the current visible route order
+  // (wraps to the top of the list when the active job is the last one).
+  const upNext = (() => {
+    if (!active) return [];
+    const idx = sorted.findIndex((i) => i.visit.id === active.visit.id);
+    const after = (idx >= 0 ? sorted.slice(idx + 1) : sorted).filter(
+      (i) => i.visit.status === "pending",
+    );
+    const pool = after.length
+      ? after
+      : sorted.filter((i) => i.visit.status === "pending");
+    return pool.slice(0, 2);
+  })();
+
   return (
     <>
       {/* Top bar: who's working + admin nav + sign out */}
@@ -255,6 +280,16 @@ export function BoardClient({
           </form>
         </div>
       </div>
+
+      {/* Sticky active job bar — the running stop stays in reach while scrolling */}
+      {active && (
+        <ActiveJob
+          item={active}
+          runningCount={running.length}
+          upNext={upNext}
+          now={now}
+        />
+      )}
 
       {/* Scoreboard (spec §8): done/total, percent, $ booked, turf-stripe bar */}
       <div className="px-5 mt-3">
@@ -488,7 +523,7 @@ function StopCard({
     : skipped
       ? "bg-amber-50 border-amber-300"
       : running
-        ? "bg-green-50 border-green-400"
+        ? "bg-green-50 border-green-500 ring-2 ring-green-500/40"
         : "bg-white border-stone-200";
 
   const onComplete = () =>
