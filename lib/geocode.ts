@@ -1,8 +1,11 @@
 // OpenRouteService Pelias geocoding (spec §2, §10): address → lat/lng on save.
-// Server-only. Degrades gracefully: a customer always saves. But we only keep
-// coordinates we actually trust — a weak/fallback match (e.g. a typo'd address
-// that Pelias snaps to a city centroid out in Lake Erie) is treated as "no
-// usable location" so it gets flagged instead of saving junk coords.
+// Server-only. Degrades gracefully: a customer always saves. The result carries
+// whatever coordinates Pelias returned PLUS a quality verdict — a weak/fallback
+// match (e.g. a typo'd address that Pelias snaps to a city centroid out in Lake
+// Erie) comes back as `low_confidence`. Callers decide what to trust:
+// geocode-on-save stores coords only when quality is "ok" (so junk never lands
+// in the DB), while the map pin picker uses any match as a draggable starting
+// guess the admin corrects by eye.
 
 // Tune here. Pelias confidence is 0..1; a confident street+house match is
 // typically >= 0.9, interpolated ~0.8, coarse fallbacks well below.
@@ -92,15 +95,12 @@ export async function geocodeAddress(
     const lat = Array.isArray(coords) ? coords[1] : undefined;
     if (typeof lat !== "number" || typeof lng !== "number") return NO_RESULT;
 
-    if (isConfidentAddressMatch(props)) {
-      return { lat, lng, quality: "ok", confidence, layer, matchType };
-    }
-
-    // Matched, but weak/coarse — don't keep the coordinates; flag for review.
+    // Weak/coarse matches keep their coordinates too — the quality field tells
+    // callers whether to store them or only use them as a visual starting guess.
     return {
-      lat: null,
-      lng: null,
-      quality: "low_confidence",
+      lat,
+      lng,
+      quality: isConfidentAddressMatch(props) ? "ok" : "low_confidence",
       confidence,
       layer,
       matchType,

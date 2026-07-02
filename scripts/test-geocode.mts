@@ -50,7 +50,7 @@ const nancy = await geocodeAddress("7544 Nancy Ann Drive", "Painesville", "OH");
 check("7544 Nancy Ann Drive → ok + coords kept", nancy.quality === "ok" && nancy.lat !== null);
 
 const balls = await geocodeAddress("1234 Balls Drive", "Painesville", "OH");
-check("1234 Balls Drive → low_confidence + coords dropped", balls.quality === "low_confidence" && balls.lat === null && balls.lng === null);
+check("1234 Balls Drive → low_confidence + coords kept for preview", balls.quality === "low_confidence" && balls.lat !== null && balls.lng !== null);
 
 const missing = await geocodeAddress("Nowhere at all 99999", "Painesville", "OH");
 check("unknown address → no_result", missing.quality === "no_result" && missing.lat === null);

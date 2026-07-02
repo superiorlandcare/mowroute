@@ -74,6 +74,22 @@ export interface Visit {
   performed_by: string | null;
 }
 
+// route_plans: custom start/end location for a specific date's route, written
+// by the map route builder. The optimizer prefers these over the env depot.
+export interface RoutePlan {
+  id: string;
+  plan_date: string;
+  start_lat: number | null;
+  start_lng: number | null;
+  start_label: string | null;
+  end_lat: number | null;
+  end_lng: number | null;
+  end_label: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // crew_notes: append-only field log per customer (spec §4). authorName is joined
 // from profiles for display.
 export interface CrewNote {

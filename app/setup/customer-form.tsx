@@ -4,9 +4,19 @@ import { useState, useTransition } from "react";
 import { ChevronLeft, Phone, Pause, MapPin } from "lucide-react";
 import type { Customer } from "@/lib/types";
 import { saveCustomer, type CustomerInput } from "./actions";
+import { PinPicker } from "./pin-picker";
 
 const inp =
   "w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm outline-none focus:border-green-500";
+
+// "41.7245" → 41.7245; anything unparseable (or blank) → null so the pin
+// simply isn't shown/moved for half-typed values.
+function parseCoord(s: string): number | null {
+  const t = s.trim();
+  if (t === "") return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
 
 function Field({
   label,
@@ -178,18 +188,37 @@ export function CustomerForm({
           <Phone className="w-4 h-4" /> Text Katy before first cut
         </button>
 
-        {/* Manual coordinate override — for addresses the geocoder can't pin. */}
-        <button
-          onClick={() => setCoordsManual((v) => !v)}
-          className={`w-full mb-3 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 ${
-            coordsManual ? "bg-blue-100 text-blue-700" : "bg-stone-100 text-stone-500"
-          }`}
-        >
-          <MapPin className="w-4 h-4" /> Set location manually
-        </button>
+        {/* Location — the geocoder gets some addresses wrong, so the map pin is
+            the source of truth. Any pin the admin places (tap, drag, or a
+            geocode guess) is saved as a manual location and never overwritten
+            by geocode-on-save. */}
+        <Field label="Location">
+          <PinPicker
+            lat={parseCoord(lat)}
+            lng={parseCoord(lng)}
+            address={address}
+            city={city}
+            onPin={(la, ln) => {
+              setLat(String(la));
+              setLng(String(ln));
+              setCoordsManual(true);
+            }}
+          />
+        </Field>
 
         {coordsManual && (
           <div className="mb-3 rounded-xl bg-blue-50/60 border border-blue-100 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wide text-blue-700 flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5" /> Manual pin
+              </span>
+              <button
+                onClick={() => setCoordsManual(false)}
+                className="text-xs font-semibold text-stone-500 underline underline-offset-2"
+              >
+                Use auto-geocode instead
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Latitude">
                 <input
@@ -211,9 +240,8 @@ export function CustomerForm({
               </Field>
             </div>
             <p className="text-xs text-stone-500 -mt-1">
-              In Google Maps, right-click the exact spot → click the lat,lng at the
-              top of the menu to copy, then paste here. Manual coords are used
-              as-is and won&apos;t be overwritten by geocoding.
+              Saved exactly as shown and never overwritten by geocoding. You can
+              also paste coords copied from Google Maps.
             </p>
           </div>
         )}

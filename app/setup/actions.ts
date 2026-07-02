@@ -74,8 +74,15 @@ export async function saveCustomer(input: CustomerInput): Promise<ActionResult> 
     }
     coords = { lat, lng, coords_manual: true };
   } else {
+    // Only a confident match is stored; weak/coarse coords stay null so the
+    // customer gets the "Not geocoded" flag instead of a junk pin.
     const geo = await geocodeAddress(input.address, input.city, "OH");
-    coords = { lat: geo.lat, lng: geo.lng, coords_manual: false };
+    const trusted = geo.quality === "ok";
+    coords = {
+      lat: trusted ? geo.lat : null,
+      lng: trusted ? geo.lng : null,
+      coords_manual: false,
+    };
   }
 
   const row = {

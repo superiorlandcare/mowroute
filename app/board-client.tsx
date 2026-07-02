@@ -23,6 +23,7 @@ import {
   Settings,
   Receipt,
   LogOut,
+  Map as MapIcon,
 } from "lucide-react";
 import type { BoardData, BoardItem } from "@/lib/data/board";
 import type { ClockState } from "@/lib/data/clock";
@@ -35,6 +36,7 @@ import {
   money,
 } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
+import { mapLinks } from "@/lib/map-links";
 import {
   completeVisit,
   skipVisit,
@@ -69,16 +71,6 @@ function fmtElapsed(ms: number): string {
 function fmtTimer(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-// Turn-by-turn deep links to a lat/lng for the major map apps (spec §8).
-function mapLinks(lat: number, lng: number) {
-  const dest = `${lat},${lng}`;
-  return {
-    google: `https://www.google.com/maps/dir/?api=1&destination=${dest}`,
-    apple: `https://maps.apple.com/?daddr=${dest}`,
-    waze: `https://waze.com/ul?ll=${dest}&navigate=yes`,
-  };
 }
 
 export function BoardClient({
@@ -227,6 +219,13 @@ export function BoardClient({
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/map"
+            className="w-9 h-9 rounded-xl bg-white border border-stone-200 flex items-center justify-center text-stone-600"
+            aria-label="Map"
+          >
+            <MapIcon className="w-4 h-4" />
+          </Link>
           {isAdmin && (
             <>
               <Link
