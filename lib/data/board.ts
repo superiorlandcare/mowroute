@@ -49,7 +49,7 @@ export async function getBoardData(isAdmin: boolean): Promise<BoardData> {
   const services = (svcRows ?? []) as ServiceWithCustomer[];
 
   const held = new Map<string, HeldCustomer>();
-  const due: { service: Service; customer: Customer }[] = [];
+  const eligible: { service: Service; customer: Customer; due: boolean }[] = [];
 
   for (const row of services) {
     const { customer, ...service } = row;
@@ -63,9 +63,10 @@ export async function getBoardData(isAdmin: boolean): Promise<BoardData> {
       continue;
     }
 
-    if (!isServiceDue(service, cycleMonday)) continue;
-    due.push({ service, customer });
+    eligible.push({ service, customer, due: isServiceDue(service, cycleMonday) });
   }
+
+  const due = eligible.filter((e) => e.due);
 
   // Lazily create a pending visit per due service for this cycle (spec §9). The
   // unique(service_id, service_date) constraint + ignoreDuplicates makes this
@@ -82,7 +83,10 @@ export async function getBoardData(isAdmin: boolean): Promise<BoardData> {
     );
   }
 
-  const serviceIds = due.map((d) => d.service.id);
+  // Visits are fetched for EVERY eligible service, not just cadence-due ones:
+  // the map route builder can create a visit off-cadence (Katy deliberately put
+  // the stop on a specific day's route), and those belong on the board too.
+  const serviceIds = eligible.map((e) => e.service.id);
   let visits: Visit[] = [];
   if (serviceIds.length > 0) {
     const { data } = await supabase
@@ -94,6 +98,11 @@ export async function getBoardData(isAdmin: boolean): Promise<BoardData> {
   }
   const visitByService = new Map(visits.map((v) => [v.service_id, v]));
 
+  // On the board: cadence-due services + any service with a visit this cycle.
+  const onBoard = eligible.filter(
+    (e) => e.due || visitByService.has(e.service.id),
+  );
+
   // Names for attribution (performed_by → profiles.full_name).
   const { data: profs } = await supabase.from("profiles").select("id, full_name");
   const nameById = new Map(
@@ -102,7 +111,7 @@ export async function getBoardData(isAdmin: boolean): Promise<BoardData> {
 
   // Crew-note threads for the customers on the board (spec §8). Append-only log,
   // oldest first; author names resolved from the profiles map above.
-  const customerIds = [...new Set(due.map((d) => d.customer.id))];
+  const customerIds = [...new Set(onBoard.map((e) => e.customer.id))];
   const notesByCustomer = new Map<string, CrewNote[]>();
   if (customerIds.length > 0) {
     const { data: noteRows } = await supabase
@@ -121,7 +130,7 @@ export async function getBoardData(isAdmin: boolean): Promise<BoardData> {
   }
 
   const items: BoardItem[] = [];
-  for (const { service, customer } of due) {
+  for (const { service, customer } of onBoard) {
     const visit = visitByService.get(service.id);
     if (!visit) continue; // exists after the upsert above
     items.push({

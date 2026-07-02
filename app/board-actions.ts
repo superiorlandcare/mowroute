@@ -296,7 +296,25 @@ export async function optimizeDay(
   dayDate.setDate(dayDate.getDate() + DAYS.indexOf(day as (typeof DAYS)[number]));
   const dayISO = toISODate(dayDate);
 
-  const outcome = await optimizeRoute(stops, dayISO);
+  // A route plan saved for that date (map builder) overrides the env depot as
+  // the route's start/end — routes don't always start/end at the shop.
+  const { data: plan } = await supabase
+    .from("route_plans")
+    .select("start_lat, start_lng, end_lat, end_lng")
+    .eq("plan_date", dayISO)
+    .maybeSingle();
+  const endpoints = {
+    start:
+      plan?.start_lat != null && plan?.start_lng != null
+        ? { lat: plan.start_lat as number, lng: plan.start_lng as number }
+        : null,
+    end:
+      plan?.end_lat != null && plan?.end_lng != null
+        ? { lat: plan.end_lat as number, lng: plan.end_lng as number }
+        : null,
+  };
+
+  const outcome = await optimizeRoute(stops, dayISO, endpoints);
   if (!outcome.ok) return { error: outcome.error, skipped };
 
   const ordered = outcome.result.orderedServiceIds;

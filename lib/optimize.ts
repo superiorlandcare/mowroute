@@ -21,6 +21,13 @@ export type OptimizeOutcome =
   | { ok: true; result: OptimizeResult }
   | { ok: false; error: string };
 
+// Optional custom route endpoints (from route_plans, written by the map route
+// builder). Either side may be null → fall back to the env depot for that side.
+export interface RouteEndpoints {
+  start: { lat: number; lng: number } | null;
+  end: { lat: number; lng: number } | null;
+}
+
 // Epoch seconds for a "HH:MM[:SS]" wall-clock time on a given YYYY-MM-DD.
 // Built in UTC; the vehicle window and job windows use the same construction, so
 // VROOM's relative comparisons stay consistent regardless of server timezone.
@@ -33,6 +40,7 @@ function epochOn(dayISO: string, hms: string): number {
 export async function optimizeRoute(
   stops: OptimizeStop[],
   dayISO: string,
+  endpoints?: RouteEndpoints,
 ): Promise<OptimizeOutcome> {
   const key = process.env.ORS_API_KEY;
   if (!key) return { ok: false, error: "Route optimization isn't configured (no ORS key)." };
@@ -40,11 +48,15 @@ export async function optimizeRoute(
     return { ok: false, error: "No geocoded stops to optimize." };
   }
 
-  // Depot: shop is both start and end of every route (env-configured). If unset,
-  // fall back to an open TSP (no fixed start/end) so the button still works.
+  // Route endpoints: a saved route plan (map builder) wins, else the shop
+  // depot from env, else that side is left open (open TSP still works).
   const depotLat = Number(process.env.DEPOT_LAT);
   const depotLng = Number(process.env.DEPOT_LNG);
   const hasDepot = Number.isFinite(depotLat) && Number.isFinite(depotLng);
+  const startPt =
+    endpoints?.start ?? (hasDepot ? { lat: depotLat, lng: depotLng } : null);
+  const endPt =
+    endpoints?.end ?? (hasDepot ? { lat: depotLat, lng: depotLng } : null);
 
   const workStart = process.env.WORKDAY_START; // "HH:MM"
   const workEnd = process.env.WORKDAY_END;
@@ -69,10 +81,8 @@ export async function optimizeRoute(
   });
 
   const vehicle: Record<string, unknown> = { id: 1, profile: "driving-car" };
-  if (hasDepot) {
-    vehicle.start = [depotLng, depotLat];
-    vehicle.end = [depotLng, depotLat];
-  }
+  if (startPt) vehicle.start = [startPt.lng, startPt.lat];
+  if (endPt) vehicle.end = [endPt.lng, endPt.lat];
   if (hasWorkday) {
     vehicle.time_window = [
       epochOn(dayISO, workStart as string),
